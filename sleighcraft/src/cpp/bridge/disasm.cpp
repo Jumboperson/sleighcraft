@@ -47,7 +47,41 @@ unique_ptr<SleighProxy> new_sleigh_proxy(RustLoadImage &ld) {
     return proxy;
 }
 
-void SleighProxy::decode_with(RustAssemblyEmit& asm_emit, RustPcodeEmit& pcode_emit, uint64_t start) {
+size_t SleighProxy::get_register_size(const rust::Str name) {
+	auto n = std::string(name);
+	try {
+		auto x = std::map<VarnodeData, string>();
+		translator.getAllRegisters(x);
+		for (auto it : x) {
+			if (n == it.second) {
+				//auto r = translator.getRegister(std::string(name));
+				return it.first.size;
+			}
+		}
+	} catch (LowlevelError &e) {
+		throw std::invalid_argument("Bad regname");
+	}
+	throw std::invalid_argument("Bad regname");
+}
+
+size_t SleighProxy::get_register_offset(const rust::Str name) {
+	auto n = std::string(name);
+	try {
+		auto x = std::map<VarnodeData, string>();
+		translator.getAllRegisters(x);
+		for (auto it : x) {
+			if (n == it.second) {
+				//auto r = translator.getRegister(std::string(name));
+				return it.first.offset;
+			}
+		}
+	} catch (LowlevelError &e) {
+		throw std::invalid_argument("Bad regname");
+	}
+	throw std::invalid_argument("Bad regname");
+}
+
+size_t SleighProxy::decode_with(RustAssemblyEmit& asm_emit, RustPcodeEmit& pcode_emit, uint64_t start, uint64_t max_length) {
 
     auto assemblyEmit = RustAssemblyEmitProxy{asm_emit};
     auto pcodeEmit = RustPcodeEmitProxy{pcode_emit};
@@ -57,6 +91,7 @@ void SleighProxy::decode_with(RustAssemblyEmit& asm_emit, RustPcodeEmit& pcode_e
     auto length = 0;
     auto buf_used = 0;
     auto buf_size = loader.bufSize();
+	auto num_insts = 0;
 
     while (buf_used < buf_size) {
         try {
@@ -64,6 +99,10 @@ void SleighProxy::decode_with(RustAssemblyEmit& asm_emit, RustPcodeEmit& pcode_e
             length = translator.oneInstruction(pcodeEmit, address);
             address = address + length;
             buf_used = buf_used + length;
+			num_insts += 1;
+
+			if (max_length != 0 && num_insts >= max_length)
+				break;
 
         } catch (BadDataError &e) {
             throw std::invalid_argument("BadDataError");
@@ -74,7 +113,7 @@ void SleighProxy::decode_with(RustAssemblyEmit& asm_emit, RustPcodeEmit& pcode_e
         //TODO: implement exception
 
     }
-
+	return buf_used;
 }
 
 // RustLoadImageProxy

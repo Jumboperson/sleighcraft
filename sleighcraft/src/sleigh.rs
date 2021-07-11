@@ -21,6 +21,7 @@ use std::collections::HashMap;
 #[cxx::bridge]
 pub mod ffi {
 
+    #[derive(Debug)]
     enum SpaceType {
         Constant = 0,
         Processor = 1,
@@ -390,12 +391,15 @@ pub mod ffi {
         type SleighProxy;
         fn set_spec(self: Pin<&mut SleighProxy>, spec_content: &str, mode: i32);
         fn new_sleigh_proxy(ld: &mut RustLoadImage) -> UniquePtr<SleighProxy>;
+        fn get_register_size(self: Pin<&mut SleighProxy>, name: &str) -> Result<usize>;
+        fn get_register_offset(self: Pin<&mut SleighProxy>, name: &str) -> Result<usize>;
         fn decode_with(
             self: Pin<&mut SleighProxy>,
             asm_emit: &mut RustAssemblyEmit,
             pcode_emit: &mut RustPcodeEmit,
             start: u64,
-        ) -> Result<()>;
+            length: u64,
+        ) -> Result<usize>;
     }
 }
 
@@ -536,6 +540,27 @@ impl AssemblyEmit for CollectingAssemblyEmit {
 }
 
 #[derive(Debug)]
+pub struct AddressSpace {
+    pub name: String,
+    pub space_type: SpaceType,
+    pub big_endian: bool,
+    pub wordsize: u32,
+    pub addrsize: u32,
+}
+
+impl AddressSpace {
+    pub fn from_proxy(proxy: &AddrSpaceProxy) -> Self {
+        Self {
+            name: String::from(proxy.get_name().to_str().unwrap()),
+            space_type: proxy.get_type(),
+            big_endian: proxy.is_big_endian(),
+            wordsize: proxy.get_wordsize(),
+            addrsize: proxy.get_addrsize(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct PcodeVarnodeData {
     pub space: String,
     pub offset: usize,
@@ -648,7 +673,7 @@ impl<'a> RustPcodeEmit<'a> {
 }
 
 pub trait LoadImage {
-    fn load_fill(&mut self, ptr: &mut [u8], addr: &AddressProxy);
+    fn load_fill(&mut self, ptr: &mut [u8], addr: &Address);
     fn adjust_vma(&mut self, _adjust: isize) {}
     fn buf_size(&mut self) -> usize;
 }
@@ -663,7 +688,10 @@ impl<'a> RustLoadImage<'a> {
     }
 
     pub fn load_fill(&mut self, ptr: &mut [u8], addr: &AddressProxy) {
-        self.internal.load_fill(ptr, addr)
+        let space = addr.get_space().get_name().to_str().unwrap().to_string();
+        let offset = addr.get_offset() as u64;
+        let address = Address { space, offset };
+        self.internal.load_fill(ptr, &address)
     }
 
     pub fn adjust_vma(&mut self, adjust: isize) {
@@ -681,8 +709,8 @@ pub struct PlainLoadImage {
 }
 
 impl LoadImage for PlainLoadImage {
-    fn load_fill(&mut self, ptr: &mut [u8], addr: &AddressProxy) {
-        let start_off = addr.get_offset() as u64;
+    fn load_fill(&mut self, ptr: &mut [u8], addr: &Address) {
+        let start_off = addr.offset as u64;
         let size = ptr.len();
         let max = self.start + (self.buf.len() as u64 - 1);
 
@@ -870,15 +898,39 @@ pub struct Sleigh<'a> {
 }
 
 impl<'a> Sleigh<'a> {
-    pub fn decode(&mut self, start: u64) -> Result<()> {
+    pub fn decode(&mut self, start: u64, length: Option<usize>) -> Result<usize> {
         // self.load_image.set_buf(bytes);
         let assembly_emit = self.asm_emit.borrow_mut();
         let pcodes_emit = self.pcode_emit.borrow_mut();
         self.sleigh_proxy
             .as_mut()
             .unwrap()
-            .decode_with(assembly_emit, pcodes_emit, start)
+            .decode_with(assembly_emit, pcodes_emit, start, if let Some(l) = length { l as u64 } else { 0 })
             .map_err(|e| Error::CppException(e))
+    }
+
+    pub fn get_register(&mut self, name: &str) -> Result<PcodeVarnodeData> {
+        let off = self.sleigh_proxy
+            .as_mut()
+            .unwrap()
+            .get_register_offset(name)
+            .map_err(|e| Error::CppException(e));
+        let size =self.sleigh_proxy
+            .as_mut()
+            .unwrap()
+            .get_register_size(name)
+            .map_err(|e| Error::CppException(e));
+        if off.is_err() {
+            match off {
+                Err(x) => return Err(x),
+                _ => {}
+            }
+        }
+        Ok(PcodeVarnodeData {
+            space: "register".to_string(),
+            offset: off.unwrap(),
+            size: size.unwrap() as u32,
+        })
     }
 }
 

@@ -98,7 +98,9 @@ public:
 
     void setSpecFromPath(const rust::Str path, int mode);
     void set_spec(const rust::Str spec_content, int mode);
-    void decode_with(RustAssemblyEmit& asm_emit, RustPcodeEmit& pcode_emit, uint64_t start);
+	size_t get_register_size(const rust::Str name);
+	size_t get_register_offset(const rust::Str name);
+    size_t decode_with(RustAssemblyEmit& asm_emit, RustPcodeEmit& pcode_emit, uint64_t start, uint64_t length);
 
 private:
     RustLoadImageProxy loader;
