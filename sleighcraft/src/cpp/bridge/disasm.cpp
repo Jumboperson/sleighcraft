@@ -81,6 +81,22 @@ size_t SleighProxy::get_register_offset(const rust::Str name) {
 	throw std::invalid_argument("Bad regname");
 }
 
+unique_ptr<string> SleighProxy::get_register_name(size_t index) {
+	try {
+		auto x = std::map<VarnodeData, string>();
+		translator.getAllRegisters(x);
+		size_t idx = 0;
+		for (auto it : x) {
+			if (idx == index)
+				return unique_ptr<string>(new string(it.second));
+			++idx;
+		}
+	} catch (LowlevelError &e) {
+		throw std::invalid_argument("Couldn't get all registers");
+	}
+	throw std::logic_error("Index too high!");
+}
+
 size_t SleighProxy::decode_with(RustAssemblyEmit& asm_emit, RustPcodeEmit& pcode_emit, uint64_t start, uint64_t max_length) {
 
     auto assemblyEmit = RustAssemblyEmitProxy{asm_emit};

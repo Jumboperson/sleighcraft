@@ -393,6 +393,7 @@ pub mod ffi {
         fn new_sleigh_proxy(ld: &mut RustLoadImage) -> UniquePtr<SleighProxy>;
         fn get_register_size(self: Pin<&mut SleighProxy>, name: &str) -> Result<usize>;
         fn get_register_offset(self: Pin<&mut SleighProxy>, name: &str) -> Result<usize>;
+        fn get_register_name(self: Pin<&mut SleighProxy>, index: usize) -> Result<UniquePtr<CxxString>>;
         fn decode_with(
             self: Pin<&mut SleighProxy>,
             asm_emit: &mut RustAssemblyEmit,
@@ -931,6 +932,22 @@ impl<'a> Sleigh<'a> {
             offset: off.unwrap(),
             size: size.unwrap() as u32,
         })
+    }
+
+    pub fn get_register_list(&mut self) -> Vec<String> {
+        let mut regs = Vec::new();
+        let mut idx = 0;
+        loop {
+            match self.sleigh_proxy
+                .as_mut()
+                .unwrap()
+                .get_register_name(idx) {
+                    Ok(x) => regs.push(x.to_str().unwrap().to_string()),
+                    Err(_) => break,
+            }
+            idx += 1;
+        }
+        regs
     }
 }
 
